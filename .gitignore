@@ -1,0 +1,4 @@
+.DS_Store
+my_python_env/
+*.xlsx
+mcikey.txt
