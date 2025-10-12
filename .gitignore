@@ -2,3 +2,6 @@
 my_python_env/
 *.xlsx
 mcikey.txt
+data_raw/
+data_processed/
+nháp/
