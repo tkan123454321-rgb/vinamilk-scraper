@@ -39,8 +39,7 @@ def balance_sheet(co_phieu):
     data.to_excel(os.path.join('data_raw','data_balance_sheet', filename_raw), index=False)
     df_raw = pd.read_excel(os.path.join('data_raw','data_balance_sheet',filename_raw))
 
-    #đặt tên cho file đã qua xử lý
-    filename_processed = f'{stock}_financial_reports_processed.xlsx'
+   
 
     # đổi từ string sang python_language
     df_raw['values'] = df_raw['values'].apply(ast.literal_eval)
@@ -223,10 +222,13 @@ def balance_sheet(co_phieu):
 
     #đổi tên để nhận diện tên cổ phiếu đang xem
     df_grouped = df_grouped.rename(columns={'group': stock})
-    #lưu file
-    os.makedirs('data_processed/balance_sheet', exist_ok=True)
-    link_dan =os.path.join('data_processed', 'balance_sheet', filename_processed) 
-    df_grouped.to_excel(link_dan, index=False)
+    # # lưu file
+    # os.makedirs('data_processed/balance_sheet', exist_ok=True)
+    #  #đặt tên cho file đã qua xử lý
+    # filename_processed = f'{stock}_financial_reports_processed.xlsx'
+    # df_grouped.to_excel(f'data_processed/balance_sheet/{filename_processed}', index=False)
+    # return df_grouped
+  
 
 
 
