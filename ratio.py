@@ -356,8 +356,7 @@ def ratio_calculation(co_phieu):
     df_ratio = df_ratio.reindex(thu_tu_dung).reset_index()
     #lưu file cuối cùng
     df_ratio.to_excel(filename_processed_file, index=False)
-    
-    return df_ratio
+    return df_ratio, filename_processed_file
 
 
 
