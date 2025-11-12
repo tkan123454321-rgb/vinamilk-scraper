@@ -9,7 +9,7 @@ from openpyxl.formatting.rule import *
 from openpyxl.utils.dataframe import *
 from openpyxl.utils import get_column_letter
 from openpyxl.utils import column_index_from_string
-from stock_processed import stock_excel_automation
+from stock_processed import stock_ratio_calculation
 from ratio import ratio_calculation
 import matplotlib.pyplot as plt
 import seaborn as sns

@@ -20,7 +20,7 @@ from company_overview import company_overview
 
 
 
-def stock_excel_automation(co_phieu):
+def stock_ratio_calculation(co_phieu):
     try:
         #lấy dữ liệu báo cáo tài chính
         df_income = income_statement(co_phieu)
