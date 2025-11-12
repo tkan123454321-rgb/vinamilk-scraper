@@ -9,7 +9,7 @@ from openpyxl.formatting.rule import *
 from openpyxl.utils.dataframe import *
 from openpyxl.utils import get_column_letter
 import traceback
-from stock_processed import stock_excel_automation
+from stock_processed import stock_ratio_calculation
 import numpy as np
 
 def ratio_calculation(co_phieu):
@@ -117,7 +117,7 @@ def ratio_calculation(co_phieu):
     df_ratio = pd.read_excel(filename_processed_file, index_col=0)
 
     # nhập dữ liệu từ báo cáo tài chính
-    filename_processed = stock_excel_automation(co_phieu)
+    filename_processed = stock_ratio_calculation(co_phieu)
     df_kqkd = pd.read_excel(filename_processed, sheet_name='Báo cáo kết quả kinh doanh', index_col=0)
     df_lctt = pd.read_excel(filename_processed, sheet_name='Báo cáo lưu chuyển tiền tệ', index_col=0)
     df_balance =pd.read_excel(filename_processed, sheet_name='Bảng cân đối kế toán', index_col=0)
