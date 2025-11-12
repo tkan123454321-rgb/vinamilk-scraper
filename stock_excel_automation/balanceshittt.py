@@ -241,4 +241,3 @@ def balance_sheet(co_phieu):
     
    
 
-
