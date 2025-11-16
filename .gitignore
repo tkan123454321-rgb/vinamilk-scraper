@@ -4,3 +4,4 @@ my_python_env/
 mcikey.txt
 data_raw/
 data_processed/
+.env
