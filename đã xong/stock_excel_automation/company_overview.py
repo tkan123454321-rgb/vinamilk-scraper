@@ -32,7 +32,10 @@ def company_overview(co_phieu):
     rename_dict = {
         'icb_name3': 'Ngành cấp 3',
         'symbol': 'Mã cổ phiếu',
-        'issue_share': 'Số lượng cổ phiếu'}
+        'issue_share': 'Số lượng cổ phiếu',
+        'history' : 'Lịch sử công ty',
+        'company_profile': 'Hồ sơ công ty'
+        }
     df_company_data = df_company_data.rename(columns=rename_dict)
     return df_company_data
 
