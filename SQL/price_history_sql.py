@@ -16,10 +16,7 @@ def price_history(co_phieu):
         today = datetime.now().strftime("%Y-%m-%d")
         quote = Quote(symbol=co_phieu, source="VCI")
         data = quote.history(start='2019-01-01', end=today, interval='1D')  # lấy dữ liệu gía lịch sử
-        filename_raw = f'{co_phieu}_price_history_{today}.xlsx'
-        file_raw_history = 'data_raw/history_price/' + filename_raw
-        data.to_excel(file_raw_history, index=False)  # lưu file raw
-        df_history_price = pd.read_excel(file_raw_history)
+        df_history_price = data
         # căn chỉnh lại cột thời gian
         df_history_price['time'] = df_history_price['time'].dt.strftime('%d-%m-%Y')
     except Exception as e:

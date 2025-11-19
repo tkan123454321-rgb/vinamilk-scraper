@@ -35,16 +35,7 @@ def balance_sheet(co_phieu):
 
         data = pd.DataFrame(response)
 
-        #xuất excel dữ liệu thô
-        os.makedirs('data_raw/data_balance_sheet', exist_ok=True)
-        filename_raw = f'{stock}_financial_reports_raw.xlsx'
-        data.to_excel(os.path.join('data_raw','data_balance_sheet', filename_raw), index=False)
-        df_raw = pd.read_excel(os.path.join('data_raw','data_balance_sheet',filename_raw))
-
-    
-
-        # đổi từ string sang python_language
-        df_raw['values'] = df_raw['values'].apply(ast.literal_eval)
+        df_raw = data
         #explode cột values thành nhiều hàng
         df_raw = df_raw.explode('values')
         df_normalized = pd.json_normalize(df_raw['values'])
@@ -231,9 +222,10 @@ def balance_sheet(co_phieu):
         # df_grouped.to_excel(f'data_processed/balance_sheet/{filename_processed}', index=False)
         return df_grouped
     except Exception as e:
-        print(f"Lỗi khi xử lý cổ phiếu {co_phieu}: {e}")
-        traceback.print_exc() # In ra chi tiết lỗi nằm ở dòng nào
-        return None
+        print(f'Lỗi : {e}')
+        
+    
+
 
 
 

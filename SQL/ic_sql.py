@@ -13,19 +13,9 @@ def income_statement(co_phieu):
 
 
     finace_data = Finance(symbol=co_phieu, source="VCI")
-    finance = finace_data.income_statement(
-        period='year', lang='vi')  # lấy dữ liệu báo cáo tài chính
-
-    if not os.path.exists('data_raw/income_statement'):  # tạo thư mục
-        os.makedirs('data_raw/income_statement')
-    today = date.today().strftime("%d-%m-%Y")
-    filename_raw = f"data_raw/income_statement/{co_phieu}_bckqhdkd_{today}.xlsx"
-    finance.to_excel(filename_raw, index=False)
-
-
-    df_finance = pd.read_excel(filename_raw)
+    finance = finace_data.income_statement(period='year', lang='vi')  # lấy dữ liệu báo cáo tài chính
     # tạo framework chuẩn
-    finance_khoiphuc = df_finance.set_index('Năm').T #transpose data, set header chuẩn
+    finance_khoiphuc = finance.set_index('Năm').T #transpose data, set header chuẩn
     df_finance = finance_khoiphuc.reset_index().rename(columns = {'index':co_phieu})
 
     # # xoá rows xấu, ko cần thiết
@@ -90,4 +80,4 @@ def income_statement(co_phieu):
 
 
 
-
+print(type(income_statement('VNM')))

@@ -38,21 +38,13 @@ def cash_flow(co_phieu):
 
         # chuyển dữ liệu về dạng dataframe
         data = pd.DataFrame(response)
-        # tạo thời gian để cho vào tên file
-        day = datetime.now().strftime("%d-%m-%y")
-        # đặt tên cho file
-        cf_file_raw = f'data_raw/cash_flow/{stock}_cash_flow_{day}.xlsx'
-        # tạo thư mục riêng cho cash flow statement
-        os.makedirs('data_raw/cash_flow', exist_ok=True)
-        data.to_excel(cf_file_raw, index=False)  # lưu file raw vào thư mục riêng
-        #đọc dữ liệu từ cf_file_raw
-        df_cf = pd.read_excel(cf_file_raw)
         # chuyển cột 'values' từ string về danh sách
         def convert_if_string(x):
             if isinstance(x,str):
                 return ast.literal_eval(x)
             else:
                 return x
+        df_cf = data
         # Áp dụng hàm cho từng giá trị trong cột 'values'
         df_cf['values'] = df_cf['values'].apply(convert_if_string)
         # nổ cột 'values' thành nhiều hàng
@@ -67,10 +59,10 @@ def cash_flow(co_phieu):
         df_cf = df_cf.pivot_table(index='name', columns='year', values='value',dropna = False).reset_index()
 
         # đổi tên 1 số hàng
-        df_cf_doiten = {' - Tăng, giảm hàng tồn kho': '- Tăng, giảm hàng tồn kho', ' - Tăng, giảm các khoản phải trả (Không kể lãi vay phải trả, thuế thu nhập doanh nghiệp phải nộp)': '- Tăng, giảm các khoản phải trả (Không kể lãi vay phải trả, thuế thu nhập doanh nghiệp phải nộp)'}
-        df_cf['name'] = df_cf['name'].replace(df_cf_doiten)
+        df_cf_rename = {' - Tăng, giảm hàng tồn kho': '- Tăng, giảm hàng tồn kho', ' - Tăng, giảm các khoản phải trả (Không kể lãi vay phải trả, thuế thu nhập doanh nghiệp phải nộp)': '- Tăng, giảm các khoản phải trả (Không kể lãi vay phải trả, thuế thu nhập doanh nghiệp phải nộp)'}
+        df_cf['name'] = df_cf['name'].replace(df_cf_rename)
         #sắp xếp các dòng theo thứ tự ban đầu
-        cf_thutu = '''
+        cf_index = '''
         I. Lưu chuyển tiền từ hoạt động kinh doanh	
         1. Lợi nhuận trước thuế	
         2. Điều chỉnh cho các khoản	
@@ -126,11 +118,11 @@ def cash_flow(co_phieu):
         Ảnh hưởng của thay đổi tỷ giá hối đoái quy đổi ngoại tệ	
         Tiền và tương đương tiền cuối kỳ
         '''
-        cf_thutu = cf_thutu.strip().splitlines()
-        cf_thutu_processed = [item.strip() for item in cf_thutu ]
+        cf_index = cf_index.strip().splitlines()
+        cf_index_processed = [item.strip() for item in cf_index ]
 
         #sắp xếp lại index cho đúng
-        df_cf = df_cf.set_index('name').reindex(cf_thutu_processed).reset_index()
+        df_cf = df_cf.set_index('name').reindex(cf_index_processed).reset_index()
         df_cf = df_cf.rename(columns={'name':f"{co_phieu}, Đơn vị: đồng"})
         #đổi tên lần cuối cho cột 'name'
         # # # tạo thư mục chữa file đã chỉnh sửa

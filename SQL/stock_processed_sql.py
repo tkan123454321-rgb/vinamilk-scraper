@@ -27,8 +27,17 @@ def stock_ratio_calculation(co_phieu):
         df_balancesheet = balance_sheet(co_phieu)
         df_cashflow = cash_flow(co_phieu)
         df_gia = price_history(co_phieu)
+        
+        print("income:", type(df_income))
+        print("balancesheet:", type(df_balancesheet))
+        print("cashflow:", type(df_cashflow))
+        print("gia:", type(df_gia))
+        
+        
         #tạo file excel tổng hợp
         today = datetime.now().strftime("%d-%m-%Y")
+        if not os.path.exists('data_processed'):
+            os.makedirs('data_processed')
         output_filename = f'data_processed/{co_phieu}_financial_data_{today}.xlsx'
         with pd.ExcelWriter(output_filename, engine='openpyxl') as writer:
             #ghi sheet báo cáo kết quả kinh doanh
@@ -43,4 +52,6 @@ def stock_ratio_calculation(co_phieu):
         print("Lỗi khi tạo file excel tổng hợp:", str(e))
         traceback.print_exc()
     return output_filename
+
+
 
