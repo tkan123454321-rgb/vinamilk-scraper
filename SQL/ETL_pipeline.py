@@ -1,0 +1,181 @@
+from IPython.display import display
+from vnstock import *
+import pandas as pd
+import time
+import os
+import shutil
+from sqlalchemy import *
+from urllib.parse import quote_plus
+from stock_processed_sql import *
+
+
+# Database connection setup
+db_user = 'tkan'
+db_password = 'Maihainganha@1'
+db_host = 'localhost'  
+db_port = '5432'       
+db_name = 'finance_db' 
+password = quote_plus(db_password) # Encode password
+connection_str = f'postgresql://{db_user}:{password}@{db_host}:{db_port}/{db_name}' # Connection string
+engine = create_engine(connection_str) # Create engine
+inspector = inspect(engine) # Create inspector
+
+def update_companies_list(engine):
+    listing = Listing(source='VCI')
+
+    # cập nhật bảng company_list
+    df_listing = listing.symbols_by_industries()
+    blacklist =['CK','NH','BH'] # loại bỏ cổ phiếu chứng khoán, ngân hàng, bảo hiểm
+    df_listing = df_listing[~df_listing['com_type_code'].isin(blacklist)] # loại bỏ cổ phiếu trong blacklist
+    hose_list = listing.symbols_by_group('HOSE').astype(str).str.upper().str.strip().to_list() # danh sách cổ phiếu sàn HOSE
+    hnx_list = listing.symbols_by_group('HNX').astype(str).str.upper().str.strip().to_list() # danh sách cổ phiếu sàn HNX
+    white_list = set(hose_list + hnx_list) # tập hợp cổ phiếu sàn HOSE và HNX
+    df_listing = df_listing[df_listing['symbol'].astype(str).str.upper().str.strip().isin(white_list)] # chỉ giữ lại cổ phiếu trong white_list
+    df_listing = df_listing.drop(['icb_name2','icb_name4','com_type_code','icb_code1','icb_code2','icb_code3','icb_code4'], axis=1)
+    df_listing = df_listing.rename(columns={
+        'symbol': 'Ticker',
+        'organ_name': 'Company Name',
+        'icb_name3': 'Industry Name',
+    })
+
+    df_listing.to_sql('temp_table', engine, schema = 'raw', if_exists='replace', index=False)  
+    query = """
+    INSERT INTO analysis_data.companies_list ("Ticker", "Company Name", "Industry Name")
+    SELECT "Ticker", "Company Name", "Industry Name"
+    FROM raw.temp_table
+    ON CONFLICT ("Ticker")
+    DO UPDATE SET
+        "Company Name" = EXCLUDED."Company Name",
+        "Industry Name" = EXCLUDED."Industry Name";
+    """ # thêm dữ liệu vào bảng companies_list, nếu đã tồn tại thì cập nhật lại thông tin
+
+    drop_temp_table = "DROP TABLE IF EXISTS temp_table;" # xóa bảng tạm temp_table
+
+    with engine.connect() as conn:
+        conn.execute(text(query)) # Execute DML to insert/update data
+        conn.execute(text(drop_temp_table)) # Drop temp_table
+        conn.commit()
+
+# Hàm cập nhật dữ liệu bảng balance_sheet trong schema raw
+def update_balance_raw(engine):
+    #truyền dữ liệu balance sheet
+    failed_tickers_balance =[]
+    balance_tickers = set()
+    df_tickers = pd.read_sql('SELECT "Ticker" FROM analysis_data.companies_list', engine)
+    ticker_list = set(df_tickers['Ticker'].str.strip())
+    if inspector.has_table('balance_sheet', schema='raw'):
+        df_all_balance = pd.read_sql('SELECT "Ticker" FROM raw.balance_sheet', engine)
+        balance_tickers = set(df_all_balance['Ticker'].str.strip())
+    missing_tickers = set(ticker_list - balance_tickers)
+    print(len(missing_tickers))
+
+    for i, ticker in enumerate(missing_tickers):
+        try: 
+            df_balancesheet = balance_sheet(ticker)
+            df_balancesheet = df_balancesheet.set_index(df_balancesheet.columns[0])
+            df_balancesheet.loc['Ticker'] = ticker
+            df_balancesheet = df_balancesheet.T
+            df_balancesheet.columns.name = None
+            df_balancesheet.index.name = 'year'
+            df_balancesheet = df_balancesheet.reset_index()
+            if inspector.has_table('balance_sheet'):
+                with engine.connect() as conn:
+                    conn.execute(text(f"DELETE FROM raw.balance_sheet WHERE \"Ticker\" = '{ticker}'"))
+                    conn.commit()
+            df_balancesheet.to_sql('balance_sheet', engine, schema='raw', if_exists='append', index=False)
+            print(f"Đã xử lý xong ticker {i+1}/{len(missing_tickers)}: {ticker}")
+        except Exception as e:
+            print(f"Lỗi với ticker {ticker}: {e}")
+        time.sleep(3)  # Thêm độ trễ 5 giây giữa các lần lặp
+        
+    print(pd.DataFrame(failed_tickers_balance))
+
+
+#truyền dữ liệu income statement raw
+def update_income_raw(engine):
+    df_tickers = pd.read_sql('SELECT "Ticker" FROM analysis_data.companies_list', engine)
+    ticker_list = set(df_tickers['Ticker'].str.strip())
+    income_tickers = set()
+    if inspector.has_table('income_statement', schema='raw'):
+        df_all_income = pd.read_sql('SELECT "Ticker" FROM raw.income_statement', engine)
+        income_tickers = set(df_all_income['Ticker'].str.strip())
+    missing_tickers = set(ticker_list - income_tickers)
+    print(missing_tickers), print(len(missing_tickers))
+        
+    failed_tickers_income =[]
+    for i, ticker in enumerate(missing_tickers):
+        try: 
+            df_ic = income_statement(ticker)
+            df_ic = df_ic.set_index(ticker)
+            df_ic.loc['Ticker'] = ticker 
+            df_ic = df_ic.T
+            df_ic.columns.name = None
+            df_ic.index.name = 'year'
+            df_ic = df_ic.reset_index()
+
+            if inspector.has_table('income_statement'):
+                with engine.connect() as conn:
+                    conn.execute(text(f"DELETE FROM raw.income_statement WHERE \"Ticker\" = '{ticker}'"))
+                    conn.commit()
+            df_ic.to_sql('income_statement', engine, schema='raw', if_exists='append', index=False)
+            print(f"Đã xử lý xong ticker {i+1}/{len(missing_tickers)}: {ticker}")
+
+        except Exception as e:
+            print(f"Lỗi với ticker {ticker}: {e}")
+            failed_tickers_income.append({'ticker': ticker, 'error': str(e)})
+        time.sleep(3)
+
+    print(f"tìm thấy {len(failed_tickers_income)} ticker(s) lỗi")
+
+
+# Hàm cập nhật dữ liệu bảng cash_flow trong schema raw
+def update_cashflow_raw(engine):
+    # truyền dữ liệu cash flow
+    indirect_tickers = set()
+    direct_tickers = set()
+    df_tickers = pd.read_sql('SELECT "Ticker" FROM analysis_data.companies_list', engine)
+    ticker_list = set(df_tickers['Ticker'].str.strip())
+    if inspector.has_table('cash_flow_indirect', schema='raw'):
+        df_all_indirect = pd.read_sql('SELECT "Ticker" FROM raw.cash_flow_indirect', engine)
+        indirect_tickers = set(df_all_indirect['Ticker'].str.strip())
+    if inspector.has_table('cash_flow_direct', schema='raw'):
+        df_all_direct = pd.read_sql('SELECT "Ticker" FROM raw.cash_flow_direct', engine)
+        direct_tickers = set(df_all_direct['Ticker'].str.strip())
+    missing_tickers = list(ticker_list - (indirect_tickers | direct_tickers))
+    tickers_failed_cash_flow = []
+    print(missing_tickers)
+
+    for i, ticker in enumerate(missing_tickers):
+        try:
+            target_table = 'unknown'
+            df_cf = cash_flow(ticker)
+            df_cf = df_cf.set_index(df_cf.columns[0])
+            df_cf.loc['Ticker'] = ticker
+            df_cf = df_cf.T
+            df_cf.columns.name = None
+            df_cf.index.name = 'year'
+            df_cf = df_cf.reset_index()
+            df_cf.columns = df_cf.columns.str.strip()
+            if '1. Tiền thu từ bán hàng, cung cấp dịch vụ và doanh thu khác' in df_cf.columns:
+                target_table = 'cash_flow_direct'
+            elif '2. Điều chỉnh cho các khoản' in df_cf.columns:
+                target_table = 'cash_flow_indirect'
+            if inspector.has_table(target_table, schema='raw'):
+                with engine.connect() as conn:
+                    conn.execute(text(f"DELETE FROM raw.{target_table} WHERE \"Ticker\" = '{ticker}'"))
+                    conn.commit()
+            df_cf.to_sql(target_table, engine, schema='raw', if_exists='append', index=False)
+            print(f"Đã xử lý xong ticker {i+1}/{len(missing_tickers)}: {ticker} vào bảng {target_table}")
+        except Exception as e:
+            print(f"Lỗi với ticker {ticker}: {e}")
+            tickers_failed_cash_flow.append({'ticker': ticker, 'error': str(e)})
+        time.sleep(1)  # Thêm độ trễ 5 giây giữa các lần lặp
+
+    print(f" Tìm thấy {len(tickers_failed_cash_flow)} ticker(s) lỗi")
+
+if __name__ == "__main__":
+    # update_balance_raw(engine)
+    # update_income_raw(engine)
+    update_cashflow_raw(engine)
+    
+    
