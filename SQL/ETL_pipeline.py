@@ -219,6 +219,7 @@ def update_ratio_raw(engine):
 if __name__ == "__main__":
     # update_balance_raw(engine)
     # update_income_raw(engine)
-    update_cashflow_raw(engine)
+    # update_cashflow_raw(engine)
+    update_ratio_raw(engine)
     
     
