@@ -49,7 +49,7 @@ def update_companies_list(engine):
         "Industry Name" = EXCLUDED."Industry Name";
     """ # thêm dữ liệu vào bảng companies_list, nếu đã tồn tại thì cập nhật lại thông tin
 
-    drop_temp_table = "DROP TABLE IF EXISTS temp_table;" # xóa bảng tạm temp_table
+    drop_temp_table = "DROP TABLE IF EXISTS raw.temp_table;" # xóa bảng tạm temp_table
 
     with engine.connect() as conn:
         conn.execute(text(query)) # Execute DML to insert/update data
@@ -172,6 +172,49 @@ def update_cashflow_raw(engine):
         time.sleep(1)  # Thêm độ trễ 5 giây giữa các lần lặp
 
     print(f" Tìm thấy {len(tickers_failed_cash_flow)} ticker(s) lỗi")
+
+# Hàm cập nhật dữ liệu bảng financial_ratio trong schema raw
+def update_ratio_raw(engine):
+    failed_tickers = []
+    ratio_ticker = set()
+    df_tickers = pd.read_sql('SELECT "Ticker" FROM analysis_data.companies_list', engine)
+    ticker_list = set(df_tickers['Ticker'].str.strip())
+    if inspector.has_table('financial_ratio', schema='raw'):
+        df_all_ratio = pd.read_sql('SELECT "Ticker" FROM raw.financial_ratio', engine)
+        ratio_ticker = set(df_all_ratio['Ticker'].str.strip())
+    missing_tickers = set(ticker_list - ratio_ticker)
+    print(len(missing_tickers))
+    for i, ticker in enumerate(missing_tickers):
+        try: 
+            df_ratio = ratio_calculation(ticker)
+            df_ratio = df_ratio.set_index('Chỉ số')
+            df_ratio.loc['Ticker'] = ticker
+            df_ratio = df_ratio.T
+            df_ratio.index.name = 'year'
+            df_ratio.columns.name = None
+            df_ratio = df_ratio.reset_index()
+            if inspector.has_table('financial_ratio'):
+                with engine.connect() as conn:
+                    conn.execute(text(f"DELETE FROM raw.financial_ratio WHERE \"Ticker\" = '{ticker}'"))
+                    conn.commit()
+            df_ratio.to_sql('financial_ratio', engine ,schema = 'raw', if_exists='append', index=False)
+            print(f"Đã xử lý xong ticker {i+1}/{len(missing_tickers)}: {ticker}")
+        except KeyboardInterrupt:
+            print("Quá trình bị gián đoạn bởi người dùng.")
+            sys.exit(0)
+        except Exception as e:
+            print(f"Lỗi với ticker {ticker}: {e}")
+            traceback.print_exc()
+            failed_tickers.append({'ticker': ticker, 'error': str(e)})
+        time.sleep(3)  # Thêm độ trễ 2 giây giữa các lần lặp
+
+    display(pd.DataFrame(failed_tickers))
+
+    if os.path.exists('data_processed'):
+        shutil.rmtree('data_processed')
+
+    if os.path.exists('data_raw'):
+        shutil.rmtree('data_raw')
 
 if __name__ == "__main__":
     # update_balance_raw(engine)
