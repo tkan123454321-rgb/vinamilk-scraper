@@ -10,6 +10,15 @@ from openpyxl.utils.dataframe import *
 from openpyxl.utils import get_column_letter
 from openpyxl import *
 import traceback
+
+def clean_data_sql(x):  #hàm biến đổi dữ liệu để phù hợp với sql (từ numpy sang kiểu dữ liệu bình thường của python)
+    if isinstance(x, (np.floating, np.integer)):
+        return x.item()
+    if pd.isna(x):
+        return None
+    return x
+
+
 def balance_sheet(co_phieu):
     try: 
         stock = co_phieu
@@ -212,18 +221,16 @@ def balance_sheet(co_phieu):
             item_sach = item.strip()
             fireant_list_processed.append(item_sach)
         df_grouped =df_grouped.set_index('group').reindex(fireant_list_processed).reset_index()
-
+        df_grouped = df_grouped.map(clean_data_sql)
         #đổi tên để nhận diện tên cổ phiếu đang xem
         df_grouped = df_grouped.rename(columns={'group': f'{stock}, Đơn vị tính: đồng'})
-        # # lưu file
-        # os.makedirs('data_processed/balance_sheet', exist_ok=True)
-        #  #đặt tên cho file đã qua xử lý
-        # filename_processed = f'{stock}_financial_reports_processed.xlsx'
-        # df_grouped.to_excel(f'data_processed/balance_sheet/{filename_processed}', index=False)
         return df_grouped
     except Exception as e:
         print(f'Lỗi : {e}')
-        
+
+if __name__ == "__main__":
+    balance_sheet('QNP')
+    
     
 
 

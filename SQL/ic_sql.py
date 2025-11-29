@@ -9,9 +9,6 @@ from openpyxl.formatting.rule import *
 from openpyxl.utils.dataframe import *
 from openpyxl.utils import get_column_letter
 def income_statement(co_phieu):
-    
-
-
     finace_data = Finance(symbol=co_phieu, source="VCI")
     finance = finace_data.income_statement(period='year', lang='vi')  # lấy dữ liệu báo cáo tài chính
     # tạo framework chuẩn
@@ -72,12 +69,19 @@ def income_statement(co_phieu):
     #xoá các cột ko cần thiết
     columns_to_drop = [str(column) for column in range(2013, 2019)]
     df_final.columns = [str(c).strip() for c in df_final.columns]
-    df_final = df_final.drop(columns=columns_to_drop, errors='ignore')
+    current_columns = df_final.columns.tolist()
+    columns_exist_to_drop = [col for col in columns_to_drop if col in current_columns]
+    df_final = df_final.drop(columns=columns_exist_to_drop, errors='ignore')
     # đổi lại thứ tự các cột từ 2019-2024
     right_order = [str(year) for year in range(2019, 2025)]
-    df_final = df_final[[co_phieu] + right_order]
+    available_year = [col for col in right_order if col in df_final.columns]
+    df_final = df_final[[co_phieu] + available_year]
     return df_final
 
 
+if __name__ == "__main__":
+    # test hàm
+    df_ic = income_statement('QNP')
+    
+    print(df_ic.columns.tolist())
 
-print(type(income_statement('VNM')))
