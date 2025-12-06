@@ -39,22 +39,23 @@ def update_companies_list(engine):
     })
 
     df_listing.to_sql('temp_table', engine, schema = 'raw', if_exists='replace', index=False)  
-    query = """
-    INSERT INTO analysis_data.companies_list ("Ticker", "Company Name", "Industry Name")
-    SELECT "Ticker", "Company Name", "Industry Name"
-    FROM raw.temp_table
-    ON CONFLICT ("Ticker")
-    DO UPDATE SET
-        "Company Name" = EXCLUDED."Company Name",
-        "Industry Name" = EXCLUDED."Industry Name";
-    """ # thêm dữ liệu vào bảng companies_list, nếu đã tồn tại thì cập nhật lại thông tin
+    if inspector.has_table('companies_list', schema='analysis_data'):
+        query = """
+        INSERT INTO analysis_data.companies_list ("Ticker", "Company Name", "Industry Name")
+        SELECT "Ticker", "Company Name", "Industry Name"
+        FROM raw.temp_table
+        ON CONFLICT ("Ticker")
+        DO UPDATE SET
+            "Company Name" = EXCLUDED."Company Name",
+            "Industry Name" = EXCLUDED."Industry Name";
+        """ # thêm dữ liệu vào bảng companies_list, nếu đã tồn tại thì cập nhật lại thông tin
 
-    drop_temp_table = "DROP TABLE IF EXISTS raw.temp_table;" # xóa bảng tạm temp_table
+        drop_temp_table = "DROP TABLE IF EXISTS raw.temp_table;" # xóa bảng tạm temp_table
 
-    with engine.connect() as conn:
-        conn.execute(text(query)) # Execute DML to insert/update data
-        conn.execute(text(drop_temp_table)) # Drop temp_table
-        conn.commit()
+        with engine.connect() as conn:
+            conn.execute(text(query)) # Execute DML to insert/update data
+            conn.execute(text(drop_temp_table)) # Drop temp_table
+            conn.commit()
 
 # Hàm cập nhật dữ liệu bảng balance_sheet trong schema raw
 def update_balance_raw(engine):
@@ -78,6 +79,8 @@ def update_balance_raw(engine):
             df_balancesheet.columns.name = None
             df_balancesheet.index.name = 'year'
             df_balancesheet = df_balancesheet.reset_index()
+            if 'Ticker' in df_balancesheet.columns and 'year' in df_balancesheet.columns: # đảm bảo không có dữ liệu trùng lặp
+                df_balancesheet = df_balancesheet.drop_duplicates(subset= ['Ticker', 'year'], keep='last')
             if inspector.has_table('balance_sheet'):
                 with engine.connect() as conn:
                     conn.execute(text(f"DELETE FROM raw.balance_sheet WHERE \"Ticker\" = '{ticker}'"))
@@ -112,7 +115,8 @@ def update_income_raw(engine):
             df_ic.columns.name = None
             df_ic.index.name = 'year'
             df_ic = df_ic.reset_index()
-
+            if 'Ticker' in df_ic.columns and 'year' in df_ic.columns: # đảm bảo không có dữ liệu trùng lặp
+                df_ic = df_ic.drop_duplicates(subset= ['Ticker', 'year'], keep='last')
             if inspector.has_table('income_statement'):
                 with engine.connect() as conn:
                     conn.execute(text(f"DELETE FROM raw.income_statement WHERE \"Ticker\" = '{ticker}'"))
@@ -156,6 +160,8 @@ def update_cashflow_raw(engine):
             df_cf.index.name = 'year'
             df_cf = df_cf.reset_index()
             df_cf.columns = df_cf.columns.str.strip()
+            if 'Ticker' in df_cf.columns and 'year' in df_cf.columns: # đảm bảo không có dữ liệu trùng lặp
+                df_cf = df_cf.drop_duplicates(subset= ['Ticker', 'year'], keep='last')
             if '1. Tiền thu từ bán hàng, cung cấp dịch vụ và doanh thu khác' in df_cf.columns:
                 target_table = 'cash_flow_direct'
             elif '2. Điều chỉnh cho các khoản' in df_cf.columns:
@@ -174,7 +180,7 @@ def update_cashflow_raw(engine):
     print(f" Tìm thấy {len(tickers_failed_cash_flow)} ticker(s) lỗi")
 
 # Hàm cập nhật dữ liệu bảng financial_ratio trong schema raw
-def update_ratio_raw(engine):
+def update_ratio_raw(engine, inspector):
     failed_tickers = []
     ratio_ticker = set()
     df_tickers = pd.read_sql('SELECT "Ticker" FROM analysis_data.companies_list', engine)
@@ -184,6 +190,45 @@ def update_ratio_raw(engine):
         ratio_ticker = set(df_all_ratio['Ticker'].str.strip())
     missing_tickers = set(ticker_list - ratio_ticker)
     print(len(missing_tickers))
+    column_mapping = {
+        "Nhóm chỉ số Định giá": "Valuation Ratios",
+        "EPS": "eps",
+        "BVPS": "bvps",
+        "P/E": "pe",
+        "P/B": "pb",
+        "P/S": "ps",
+        "EV/EBITDA": "ev_ebitda",
+        "Nhóm chỉ số Sinh lợi": "Profitability Ratios",
+        "Biên EBIT (%)": "ebit_margin",
+        "Biên lợi nhuận gộp (%)": "gross_margin",
+        "Biên lợi nhuận ròng (%)": "net_margin",
+        "Tỷ suất sinh lợi trên tổng tài sản bình quân (ROAA) (%)": "roaa",
+        "Tỷ suất sinh lợi trên vốn chủ sở hữu bình quân (ROEA) (%)": "roea",
+        "Tỷ suất sinh lợi trên vốn dài hạn bình quân (ROCE) (%)": "roce",
+        "Nhóm chỉ số Tăng trưởng": "Growth Ratios",
+        "Tăng trưởng doanh thu thuần (%)": "revenue_growth",
+        "Tăng trưởng lợi nhuận sau thuế (%)": "net_income_growth",
+        "Nhóm chỉ số Thanh khoản": "Liquidity Ratios",
+        "Tỷ số thanh toán hiện hành (ngắn hạn)": "current_ratio",
+        "Chỉ số thanh toán nhanh": "quick_ratio",
+        "Khả năng chi trả lãi vay": "interest_coverage_ratio",
+        "Nhóm chỉ số Hiệu quả hoạt động": "Efficiency Ratios",
+        "Thời gian thu tiền khách hàng bình quân (ngày)": "days_sales_outstanding",
+        "Thời gian tồn kho bình quân (ngày)": "days_inventory_outstanding",
+        "Vòng quay hàng tồn kho": "inventory_turnover",
+        "Vòng quay tổng tài sản": "total_asset_turnover",
+        "Số ngày trả cho nhà cung cấp (ngày)": "days_payable_outstanding",
+        "Vòng quay trả cho nhà cung cấp": "payable_turnover",
+        "Chu kỳ chuyển đổi tiền mặt (CCC) (ngày)": "cash_conversion_cycle",
+        "Nhóm chỉ số Đòn bẩy tài chính": "Financial Leverage Ratios",
+        "Tỷ số Nợ vay trên Vốn chủ sở hữu (%)": "debt_to_equity_ratio",
+        "Tỷ số Nợ vay trên Tổng tài sản (%)": "debt_to_assets_ratio",
+        "Nhóm chỉ số Dòng tiền": "Cash Flow Ratios",
+        "Tỷ số dòng tiền HĐKD trên doanh thu thuần (%)": "operating_cash_flow_to_revenue_ratio",
+        "Dòng tiền từ HĐKD trên Tổng tài sản (%)": "operating_cash_flow_to_total_assets_ratio",
+        "Dòng tiền từ HĐKD trên Vốn chủ sở hữu (%)": "operating_cash_flow_to_equity_ratio",
+        "Dòng tiền từ HĐKD trên mỗi cổ phần": "operating_cash_flow_per_share"
+    }
     for i, ticker in enumerate(missing_tickers):
         try: 
             df_ratio = ratio_calculation(ticker)
@@ -193,10 +238,14 @@ def update_ratio_raw(engine):
             df_ratio.index.name = 'year'
             df_ratio.columns.name = None
             df_ratio = df_ratio.reset_index()
+            if 'Ticker' in df_ratio.columns and 'year' in df_ratio.columns:
+                df_ratio = df_ratio.drop_duplicates(subset= ['Ticker', 'year'], keep='last')
+            df_ratio = df_ratio.rename(columns=column_mapping)
             if inspector.has_table('financial_ratio'):
                 with engine.connect() as conn:
-                    conn.execute(text(f"DELETE FROM raw.financial_ratio WHERE \"Ticker\" = '{ticker}'"))
+                    conn.execute(text(f"DELETE FROM raw.financial_ratio WHERE TRIM(\"Ticker\") = '{ticker}'"))
                     conn.commit()
+            
             df_ratio.to_sql('financial_ratio', engine ,schema = 'raw', if_exists='append', index=False)
             print(f"Đã xử lý xong ticker {i+1}/{len(missing_tickers)}: {ticker}")
         except KeyboardInterrupt:
@@ -216,10 +265,8 @@ def update_ratio_raw(engine):
     if os.path.exists('data_raw'):
         shutil.rmtree('data_raw')
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
     # update_balance_raw(engine)
     # update_income_raw(engine)
     # update_cashflow_raw(engine)
-    update_ratio_raw(engine)
-    
-    
+    # update_ratio_raw(engine)

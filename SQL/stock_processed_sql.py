@@ -3,7 +3,6 @@ import pandas as pd
 import ast
 import os
 import time
-from datetime import *
 import numpy as np
 from openpyxl.styles import *
 from openpyxl.formatting.rule import *
@@ -14,6 +13,7 @@ import traceback
 from IPython.display import display
 from openpyxl.utils import column_index_from_string
 from vnstock import *
+from datetime import datetime
 
 
 
@@ -773,11 +773,11 @@ def ratio_calculation(co_phieu):
         df_ratio.loc['Vòng quay trả cho nhà cung cấp'] = vong_quay_tra_cho_nha_cung_cap.round(2).fillna(0)
 
         #tính chu kỳ chuyển đổi tiền mặt
-        
-        so_ngay_ton_kho = df_ratio.loc['Thời gian tồn kho bình quân (ngày)']
-        so_ngay_thu_tien_khach_hang = df_ratio.loc['Thời gian thu tiền khách hàng bình quân (ngày)']
-        CCC = (so_ngay_ton_kho + so_ngay_thu_tien_khach_hang - so_ngay_tra_cho_nha_cung_cap).fillna(0).round(0)
-        df_ratio.loc['Chu kỳ chuyển đổi tiền mặt (CCC) (ngày)'] = CCC
+        if 'Thời gian tồn kho bình quân (ngày)' in df_ratio.index:
+            so_ngay_ton_kho = df_ratio.loc['Thời gian tồn kho bình quân (ngày)']
+            so_ngay_thu_tien_khach_hang = df_ratio.loc['Thời gian thu tiền khách hàng bình quân (ngày)']
+            CCC = (so_ngay_ton_kho + so_ngay_thu_tien_khach_hang - so_ngay_tra_cho_nha_cung_cap).fillna(0).round(0)
+            df_ratio.loc['Chu kỳ chuyển đổi tiền mặt (CCC) (ngày)'] = CCC
 
         #tính khả năng chi trả lãi vay
         loi_nhuan_truoc_thue = df_kqkd.loc['Tổng lợi nhuận kế toán trước thuế']
