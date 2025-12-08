@@ -7,6 +7,7 @@ import shutil
 from sqlalchemy import *
 from urllib.parse import quote_plus
 from stock_processed_sql import *
+import sys
 
 
 # Database connection setup

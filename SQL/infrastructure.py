@@ -61,6 +61,22 @@ def init_db_infrastructure(engine): # hàm tạo cơ sở hạ tầng database
                 CASCADE
         );
         """))
+        connection.execute(text("""
+        CREATE TABLE IF NOT EXISTS raw.daily_price_history (
+            "Ticker" VARCHAR(10) NOT NULL,
+            "open" FLOAT,
+            "high" FLOAT,
+            "low" FLOAT,
+            "close" FLOAT,
+            "volume" BIGINT,
+            "date" DATE NOT NULL,
+        CONSTRAINT PK_daily_price_history PRIMARY KEY ("Ticker", "date"),
+        CONSTRAINT fk_daily_price_history_ticker FOREIGN KEY ("Ticker") 
+            REFERENCES analysis_data.companies_list("Ticker") 
+            ON DELETE 
+                CASCADE
+        );
+        """))
         connection.commit()
 
 def data_clean_sql(engine, inspector): # hàm dọn dẹp dữ liệu trong các bảng
