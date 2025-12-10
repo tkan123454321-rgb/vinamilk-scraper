@@ -8,6 +8,8 @@ from sqlalchemy import *
 from urllib.parse import quote_plus
 from stock_processed_sql import *
 import sys
+import json
+import traceback
 
 
 # Database connection setup
@@ -266,6 +268,128 @@ def update_ratio_raw(engine, inspector):
     if os.path.exists('data_raw'):
         shutil.rmtree('data_raw')
 
+        
+        
+def insert_ic_quarter(engine): # Hàm chèn dữ liệu báo cáo tài chính quý vào bảng ic_quarter trong schema raw
+    quarter_tickers = set() # Tạo set rỗng trước
+    df_tickers = pd.read_sql('SELECT "Ticker" FROM analysis_data.companies_list', engine) # Lấy danh sách ticker từ bảng companies_list
+    ticker_list = set(df_tickers['Ticker'].str.strip()) # Chuyển danh sách ticker thành set để dễ dàng so sánh
+     # Lấy danh sách ticker đã có trong bảng ic_quarter
+    if inspector.has_table('ic_quarter', schema='raw'):
+        df_all_quarter_ic = pd.read_sql('SELECT "Ticker" FROM raw.ic_quarter', engine)
+        quarter_tickers = set(df_all_quarter_ic['Ticker'].str.strip()) # Chuyển danh sách ticker đã có thành set
+    missing_tickers = set(ticker_list - quarter_tickers) # Tìm các ticker chưa có trong bảng ic_quarter
+    print(len(missing_tickers))
+
+    for i,ticker in enumerate(missing_tickers): # Lặp qua từng ticker chưa có
+        try:
+            print(f'Processing {i+1}/{len(missing_tickers)}: {ticker}')
+            co_phieu = ticker
+            start = 2020
+            end = 2025
+            years = range(end, start-1, -1)
+            quarters = [4,3,2,1]
+            auth_token = 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsIng1dCI6IkdYdExONzViZlZQakdvNERWdjV4QkRITHpnSSIsImtpZCI6IkdYdExONzViZlZQakdvNERWdjV4QkRITHpnSSJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmZpcmVhbnQudm4iLCJhdWQiOiJodHRwczovL2FjY291bnRzLmZpcmVhbnQudm4vcmVzb3VyY2VzIiwiZXhwIjoxODg5NjIyNTMwLCJuYmYiOjE1ODk2MjI1MzAsImNsaWVudF9pZCI6ImZpcmVhbnQudHJhZGVzdGF0aW9uIiwic2NvcGUiOlsiYWNhZGVteS1yZWFkIiwiYWNhZGVteS13cml0ZSIsImFjY291bnRzLXJlYWQiLCJhY2NvdW50cy13cml0ZSIsImJsb2ctcmVhZCIsImNvbXBhbmllcy1yZWFkIiwiZmluYW5jZS1yZWFkIiwiaW5kaXZpZHVhbHMtcmVhZCIsImludmVzdG9wZWRpYS1yZWFkIiwib3JkZXJzLXJlYWQiLCJvcmRlcnMtd3JpdGUiLCJwb3N0cy1yZWFkIiwicG9zdHMtd3JpdGUiLCJzZWFyY2giLCJzeW1ib2xzLXJlYWQiLCJ1c2VyLWRhdGEtcmVhZCIsInVzZXItZGF0YS13cml0ZSIsInVzZXJzLXJlYWQiXSwianRpIjoiMjYxYTZhYWQ2MTQ5Njk1ZmJiYzcwODM5MjM0Njc1NWQifQ.dA5-HVzWv-BRfEiAd24uNBiBxASO-PAyWeWESovZm_hj4aXMAZA1-bWNZeXt88dqogo18AwpDQ-h6gefLPdZSFrG5umC1dVWaeYvUnGm62g4XS29fj6p01dhKNNqrsu5KrhnhdnKYVv9VdmbmqDfWR8wDgglk5cJFqalzq6dJWJInFQEPmUs9BW_Zs8tQDn-i5r4tYq2U8vCdqptXoM7YgPllXaPVDeccC9QNu2Xlp9WUvoROzoQXg25lFub1IYkTrM66gJ6t9fJRZToewCt495WNEOQFa_rwLCZ1QwzvL0iYkONHS_jZ0BOhBCdW9dWSawD6iF1SIQaFROvMDH1rg'
+            user = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36'
+            headers = { 'Authorization': auth_token,
+                        'User-Agent': user}
+            query = text("""
+                        INSERT INTO raw.ic_quarter ("Ticker", "Year", "Quarter", "data")
+                        VALUES (:ticker, :year, :quarter, :data)
+                        ON CONFLICT ("Ticker", "Year", "Quarter") 
+                        DO UPDATE SET 
+                        "data" = EXCLUDED."data",
+                        "insert at" = CURRENT_TIMESTAMP;
+                        
+            """) # Câu lệnh chèn dữ liệu với xử lý trùng lặp
+            with engine.connect() as conn:
+                transaction = conn.begin()
+                if inspector.has_table('ic_quarter', schema='raw'): # Kiểm tra nếu bảng ic_quarter đã tồn tại
+                    try:
+                        for y in years: # tạo danh sách url tự động từ năm end đến start
+                            print(f'Year: {y}')
+                            for q in quarters:
+                                print(f'  Quarter: {q}')
+                                url = f'https://restv2.fireant.vn/symbols/{co_phieu}/full-financial-reports?type=2&year={y}&quarter={q}&limit=1' # URL API
+                                params = { 'type': '2', 
+                                'year': str(y), 
+                                'quarter': str(q), 
+                                'limit': '1'}
+                                response = requests.get(url, headers=headers, params=params) # Gửi yêu cầu GET
+                                if response.status_code == 200:
+                                    data = response.json() # đổi thành object trong python
+                                    if not data:
+                                        continue
+                                    resp_json = json.dumps(data, ensure_ascii=False) # Chuyển object thành chuỗi JSON
+                                    conn.execute(query, {"ticker": co_phieu, "year": y, "quarter": q, "data": resp_json}) # Thực thi câu lệnh chèn dữ liệu
+                                time.sleep(1) # Thời gian chờ giữa các yêu cầu để tránh bị chặn
+                        print(f'xử lý xong cho {co_phieu}')
+                        transaction.commit()
+                    except Exception as e:
+                        transaction.rollback()
+                        print(f"Error: {e}")
+                        traceback.print_exc()
+        except Exception as e:
+            print(f"Failed to process {ticker}: {e}")
+            traceback.print_exc()
+
+# Hàm cập nhật dữ liệu giá cổ phiếu hàng ngày với cơ chế thông minh (smart catch-up)
+def daily_catchup_update(engine):
+    print("--- 🔄 CHẠY CẬP NHẬT THÔNG MINH (SMART CATCH-UP) ---")
+    header = {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36',
+        'Authorization': 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsIng1dCI6IkdYdExONzViZlZQakdvNERWdjV4QkRITHpnSSIsImtpZCI6IkdYdExONzViZlZQakdvNERWdjV4QkRITHpnSSJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmZpcmVhbnQudm4iLCJhdWQiOiJodHRwczovL2FjY291bnRzLmZpcmVhbnQudm4vcmVzb3VyY2VzIiwiZXhwIjoxODg5NjIyNTMwLCJuYmYiOjE1ODk2MjI1MzAsImNsaWVudF9pZCI6ImZpcmVhbnQudHJhZGVzdGF0aW9uIiwic2NvcGUiOlsiYWNhZGVteS1yZWFkIiwiYWNhZGVteS13cml0ZSIsImFjY291bnRzLXJlYWQiLCJhY2NvdW50cy13cml0ZSIsImJsb2ctcmVhZCIsImNvbXBhbmllcy1yZWFkIiwiZmluYW5jZS1yZWFkIiwiaW5kaXZpZHVhbHMtcmVhZCIsImludmVzdG9wZWRpYS1yZWFkIiwib3JkZXJzLXJlYWQiLCJvcmRlcnMtd3JpdGUiLCJwb3N0cy1yZWFkIiwicG9zdHMtd3JpdGUiLCJzZWFyY2giLCJzeW1ib2xzLXJlYWQiLCJ1c2VyLWRhdGEtcmVhZCIsInVzZXItZGF0YS13cml0ZSIsInVzZXJzLXJlYWQiXSwianRpIjoiMjYxYTZhYWQ2MTQ5Njk1ZmJiYzcwODM5MjM0Njc1NWQifQ.dA5-HVzWv-BRfEiAd24uNBiBxASO-PAyWeWESovZm_hj4aXMAZA1-bWNZeXt88dqogo18AwpDQ-h6gefLPdZSFrG5umC1dVWaeYvUnGm62g4XS29fj6p01dhKNNqrsu5KrhnhdnKYVv9VdmbmqDfWR8wDgglk5cJFqalzq6dJWJInFQEPmUs9BW_Zs8tQDn-i5r4tYq2U8vCdqptXoM7YgPllXaPVDeccC9QNu2Xlp9WUvoROzoQXg25lFub1IYkTrM66gJ6t9fJRZToewCt495WNEOQFa_rwLCZ1QwzvL0iYkONHS_jZ0BOhBCdW9dWSawD6iF1SIQaFROvMDH1rg'
+    }
+    
+    with engine.connect() as conn:
+        transaction = conn.begin()
+        # 1. Tìm ngày mới nhất đang có trong kho
+        start_date = conn.execute(text('SELECT MAX("date") FROM raw.daily_price_history')).scalar()
+
+        if start_date is None:
+            print("⚠️ Kho trống! Vui lòng chạy tải dữ liệu đầy đủ ban đầu trước khi chạy cập nhật thông minh.")
+            return
+        # 2. Tính toán khoảng thời gian cần bù
+        end_date = datetime.now().date()
+        if start_date == end_date: 
+            print("✅ Dữ liệu đã mới nhất.")
+            return
+
+        if start_date < end_date:
+            sql_upsert = text("""
+            INSERT INTO raw.daily_price_history ("Ticker", open, high, close, volume, date)
+            VALUES (:ticker, :open, :high, :close, :volume, :date)
+            ON CONFLICT ("Ticker", "date") 
+            DO UPDATE SET open = EXCLUDED.open, high = EXCLUDED.high, close = EXCLUDED.close, volume = EXCLUDED.volume
+                              """)
+            # 3. Lấy danh sách ticker từ bảng companies_list
+            df_tickers = pd.read_sql('SELECT "Ticker" FROM analysis_data.companies_list', engine)
+            ticker_list = set(df_tickers['Ticker'].str.strip())
+            # 4. Lặp qua từng ticker và tải dữ liệu cần bù
+            for i,ticker in enumerate(ticker_list):
+                print(f"⏳ [{i+1}/{len(ticker_list)}] Đang cập nhật {ticker} từ {start_date} đến {end_date}...")
+                # Gọi API để lấy dữ liệu từ start_date đến end_date
+                api_url = f"https://restv2.fireant.vn/symbols/{ticker}/historical-quotes?startDate={start_date}&endDate={end_date}&offset=0&limit=30"
+                params = {'startDate': start_date, 'endDate': end_date, 'offset': 0, 'limit': 30}
+                response = requests.get(api_url, headers=header, params=params)
+                if response.status_code == 200:
+                    data = response.json()
+                    for record in data:
+                        date = record.get('date').split('T')[0]  # Lấy phần ngày, bỏ phần thời gian
+                         # Chèn hoặc cập nhật dữ liệu vào bảng daily_price_history
+                        conn.execute(sql_upsert, {
+                            'ticker': ticker,
+                            'open': record.get('priceOpen'),
+                            'high': record.get('priceHigh'),
+                            'close': record.get('priceClose'),
+                            'volume': record.get('volume'),
+                            'date': date
+                        })
+                        time.sleep(0.2)  # Giữ rate limit
+                time.sleep(0.3)  # Giữ rate limit giữa các ticker
+        transaction.commit()   
+        
+        
 # if __name__ == "__main__":
     # update_balance_raw(engine)
     # update_income_raw(engine)

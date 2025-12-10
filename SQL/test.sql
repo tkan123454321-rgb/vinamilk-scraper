@@ -1,25 +1,31 @@
 -- Active: 1764400223395@@127.0.0.1@5432@finance_db
-SELECT "Ticker", "Year", "Quarter", "data"
-FROM raw.ic_quarter
-WHERE "Ticker" = 'VNM' AND "Year" = 2024
-LIMIT 1;
-
-
-SELECT 
+SELECT
     "Ticker",
-    "Year",
-    "Quarter",
-    item->>'id' AS ma_chi_tieu,
-    item->>'name' AS ten_chi_tieu,
-    -- Truy cập sâu vào: values -> phần tử 0 -> value
-    (item->'values'->0->>'value')::NUMERIC AS gia_tri 
-FROM 
-    raw.ic_quarter,
-    jsonb_array_elements(data) AS item -- Hàm này bung mảng ra thành các item
-WHERE 
-    "Ticker" = 'VNM' 
-    AND "Year" = 2024
-LIMIT 20;
+    data ->> 'date' as ngày,
+    data ->> 'priceLow' as giá_thấp_nhất,
+    data ->> 'priceHigh' as giá_cao_nhất,
+    data ->> 'priceOpen' as giá_mở_cửa
+from raw.daily_price
+where
+    "Ticker" = 'VNM'
+    and data ->> 'date' = '2024-12-05';
 
+SELECT date, open
+FROM raw.daily_price_history
+WHERE
+    "Ticker" = 'VCC'
+ORDER BY date DESC
+LIMIT 2000;
 
-DROP TABLE raw.daily_price;
+SELECT "Ticker", (item ->> 'priceOpen')::FLOAT, (item ->> 'priceHigh')::FLOAT, (item ->> 'priceLow')::FLOAT, (item ->> 'priceClose')::FLOAT, TO_CHAR(
+        (item ->> 'totalVolume')::FLOAT, '999,999,999'
+    ), TO_CHAR(
+        (item ->> 'date')::DATE, 'DD/MM/YYYY'
+    )
+FROM raw.daily_price,
+    -- Cú pháp "dấu phẩy" này tương đương với CROSS JOIN LATERAL
+    jsonb_array_elements(data) AS item
+WHERE
+    "Ticker" = 'VNM'
+    -- Thử lọc lấy ngày cụ thể
+LIMIT 5;

@@ -6,6 +6,9 @@ import os
 import shutil
 from sqlalchemy import *
 from urllib.parse import quote_plus
+import requests
+import json
+from datetime import datetime
 # Database connection setup
 db_user = 'tkan'
 db_password = 'Maihainganha@1'
@@ -46,35 +49,6 @@ def init_db_infrastructure(engine): # hàm tạo cơ sở hạ tầng database
                 CASCADE,
         CONSTRAINT chk_ic_quarter_year CHECK ("Year" >= 2019 AND "Year" <= EXTRACT(YEAR FROM CURRENT_DATE)),
         CONSTRAINT chk_ic_quarter_quarter CHECK ("Quarter" >= 1 AND "Quarter" <= 4)
-        );
-        """))
-        # tạo bảng dữ liệu giá theo ngày nếu chưa có
-        connection.execute(text("""
-        CREATE TABLE IF NOT EXISTS raw.daily_price (
-            "Ticker" VARCHAR(10) NOT NULL,
-            "data" JSONB,
-            "insert at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        CONSTRAINT PK_daily_price PRIMARY KEY ("Ticker"),
-        CONSTRAINT fk_daily_price_ticker FOREIGN KEY ("Ticker") 
-            REFERENCES analysis_data.companies_list("Ticker") 
-            ON DELETE 
-                CASCADE
-        );
-        """))
-        connection.execute(text("""
-        CREATE TABLE IF NOT EXISTS raw.daily_price_history (
-            "Ticker" VARCHAR(10) NOT NULL,
-            "open" FLOAT,
-            "high" FLOAT,
-            "low" FLOAT,
-            "close" FLOAT,
-            "volume" BIGINT,
-            "date" DATE NOT NULL,
-        CONSTRAINT PK_daily_price_history PRIMARY KEY ("Ticker", "date"),
-        CONSTRAINT fk_daily_price_history_ticker FOREIGN KEY ("Ticker") 
-            REFERENCES analysis_data.companies_list("Ticker") 
-            ON DELETE 
-                CASCADE
         );
         """))
         connection.commit()
@@ -206,6 +180,95 @@ def apply_constraints(engine):
         except Exception as e:
             transaction.rollback()
             print(f"Error applying constraints: {e}")
+            
+# Hàm chèn dữ liệu giá cổ phiếu hàng ngày vào bảng daily_price trong schema raw
+def insert_daily_price(engine,start_date = '2020-01-01'):
+    #bước 1: set up bảng rỗng với các khoá
+    with engine.connect() as connection:
+        try:
+            transaction = connection.begin()
+            connection.execute(text("""
+                CREATE TABLE IF NOT EXISTS raw.daily_price_jsonb (
+                    "Ticker" VARCHAR(10) NOT NULL,
+                    "data" JSONB,
+                    "insert at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT PK_daily_price PRIMARY KEY ("Ticker"),
+                    CONSTRAINT fk_daily_price_ticker FOREIGN KEY ("Ticker") 
+                        REFERENCES analysis_data.companies_list("Ticker") 
+                        ON DELETE 
+                            CASCADE
+                );
+            """)) # Tạo bảng daily_price_jsonb nếu chưa tồn tại
+            connection.execute(text("""
+                CREATE TABLE IF NOT EXISTS raw.daily_price_history (
+                    "Ticker" VARCHAR(10) NOT NULL,
+                    "open" FLOAT,
+                    "high" FLOAT,
+                    "low" FLOAT,
+                    "close" FLOAT,
+                    "volume" BIGINT,
+                    "date" DATE NOT NULL,
+            CONSTRAINT PK_daily_price_history PRIMARY KEY ("Ticker", "date"),
+            CONSTRAINT fk_daily_price_history_ticker FOREIGN KEY ("Ticker") 
+                REFERENCES analysis_data.companies_list("Ticker") 
+                    ON DELETE 
+                        CASCADE
+                );
+            """)) # Tạo bảng daily_price_history nếu chưa tồn tại
+            #bước 2: nạp dữ liệu vào bảng temp daily_price_jsonb
+            daily_price_tickers = set()
+            df_tickers = pd.read_sql('SELECT "Ticker" FROM analysis_data.companies_list', engine) # lấy danh sách ticker từ bảng companies_list
+            ticker_list = set(df_tickers['Ticker'].str.strip())
+            if inspector.has_table('daily_price_jsonb', schema='raw'):
+                df_all_daily_price = pd.read_sql('SELECT "Ticker" FROM raw.daily_price', engine)
+                daily_price_tickers = set(df_all_daily_price['Ticker'].str.strip()) # lấy danh sách ticker từ bảng daily_price
+            missing_tickers = set(ticker_list - daily_price_tickers) # tìm các ticker chưa có trong bảng daily_price
+            print(len(missing_tickers))
+            sql_insert = text("""
+                            INSERT INTO raw.daily_price_jsonb ( "Ticker", data)
+                            VALUES (:ticker, :data)
+                            ON CONFLICT ( "Ticker") DO UPDATE SET data = EXCLUDED.data;
+                            """) # SQL insert statement
+            auth_token = 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsIng1dCI6IkdYdExONzViZlZQakdvNERWdjV4QkRITHpnSSIsImtpZCI6IkdYdExONzViZlZQakdvNERWdjV4QkRITHpnSSJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmZpcmVhbnQudm4iLCJhdWQiOiJodHRwczovL2FjY291bnRzLmZpcmVhbnQudm4vcmVzb3VyY2VzIiwiZXhwIjoxODg5NjIyNTMwLCJuYmYiOjE1ODk2MjI1MzAsImNsaWVudF9pZCI6ImZpcmVhbnQudHJhZGVzdGF0aW9uIiwic2NvcGUiOlsiYWNhZGVteS1yZWFkIiwiYWNhZGVteS13cml0ZSIsImFjY291bnRzLXJlYWQiLCJhY2NvdW50cy13cml0ZSIsImJsb2ctcmVhZCIsImNvbXBhbmllcy1yZWFkIiwiZmluYW5jZS1yZWFkIiwiaW5kaXZpZHVhbHMtcmVhZCIsImludmVzdG9wZWRpYS1yZWFkIiwib3JkZXJzLXJlYWQiLCJvcmRlcnMtd3JpdGUiLCJwb3N0cy1yZWFkIiwicG9zdHMtd3JpdGUiLCJzZWFyY2giLCJzeW1ib2xzLXJlYWQiLCJ1c2VyLWRhdGEtcmVhZCIsInVzZXItZGF0YS13cml0ZSIsInVzZXJzLXJlYWQiXSwianRpIjoiMjYxYTZhYWQ2MTQ5Njk1ZmJiYzcwODM5MjM0Njc1NWQifQ.dA5-HVzWv-BRfEiAd24uNBiBxASO-PAyWeWESovZm_hj4aXMAZA1-bWNZeXt88dqogo18AwpDQ-h6gefLPdZSFrG5umC1dVWaeYvUnGm62g4XS29fj6p01dhKNNqrsu5KrhnhdnKYVv9VdmbmqDfWR8wDgglk5cJFqalzq6dJWJInFQEPmUs9BW_Zs8tQDn-i5r4tYq2U8vCdqptXoM7YgPllXaPVDeccC9QNu2Xlp9WUvoROzoQXg25lFub1IYkTrM66gJ6t9fJRZToewCt495WNEOQFa_rwLCZ1QwzvL0iYkONHS_jZ0BOhBCdW9dWSawD6iF1SIQaFROvMDH1rg'
+            user = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36'
+            headers = { 'Authorization': auth_token,
+                                'User-Agent': user}
+            today = datetime.now().strftime('%Y-%m-%d')
+            params = { 'startDate': start_date, 'endDate': today, 'offset':0 } # Common parameters
+            for i, co_phieu in enumerate(missing_tickers): # vòng lặp insert các ticker thiếu vào bảng daily_price_jsonb
+                print(f"Processing {i+1}/{len(missing_tickers)}: {co_phieu}")
+                url = f"https://restv2.fireant.vn/symbols/{co_phieu}/historical-quotes?startDate={start_date}&endDate={today}&offset=0&limit=2000"
+                response = requests.get(url, headers=headers, params=params)
+                if response.status_code == 200:
+                    data = response.json()
+                sql_params = {
+                            'ticker': co_phieu,
+                            'data': json.dumps(data, ensure_ascii=False)
+                        }
+                connection.execute(sql_insert, sql_params)
+                time.sleep(0.5)
+            # bươc 3: chuyển dữ liệu từ bảng daily_price_jsonb sang bảng daily_price_history
+            sql_flatten = text("""
+                INSERT INTO raw.daily_price_history ("Ticker", "open", "high", "low", "close", "volume","date")
+                SELECT 
+                    "Ticker",
+                    (raw_data->>'priceOpen')::FLOAT,
+                    (raw_data->>'priceHigh')::FLOAT,
+                    (raw_data->>'priceLow')::FLOAT,
+                    (raw_data->>'priceClose')::FLOAT,
+                    (raw_data->>'totalVolume')::NUMERIC::BIGINT,
+                    (raw_data->>'date')::DATE
+                FROM raw.daily_price_jsonb,
+                    jsonb_array_elements(data) AS raw_data
+                ON CONFLICT ("Ticker", "date") DO NOTHING;
+                """)
+            connection.execute(sql_flatten)
+            #xoá bảng temp daily_price_jsonb
+            connection.execute(text("DROP TABLE IF EXISTS raw.daily_price_jsonb;"))
+            transaction.commit()
+        except Exception as e:
+            transaction.rollback()
+            print(f"Error occurred: {e}")
 
 if __name__ == "__main__":
     init_db_infrastructure(engine)
